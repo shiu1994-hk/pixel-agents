@@ -32,7 +32,16 @@ import {
   WILDCARD_HOSTNAMES,
 } from './constants.js';
 import { FileStateAdapter } from './fileStateAdapter.js';
-import { claudeProvider, copyHookScript, hookProviderById } from './providers/index.js';
+import { writeLayoutToFile } from './layoutPersistence.js';
+import { GROK_BOT_PROVIDER_ID } from './providers/hook/grok-bot/constants.js';
+import { GrokBotFeed } from './providers/hook/grok-bot/feedRuntime.js';
+import {
+  claudeProvider,
+  copyHookScript,
+  hookProviderById,
+  runtimeProviders,
+} from './providers/index.js';
+import { isOfficeTheme, loadThemeLayout, type OfficeTheme } from './scenes.js';
 import { PixelAgentsServer } from './server.js';
 import { PtySessionManager } from './terminal/ptySessionManager.js';
 import { isLoopbackHost, normalizeHostname } from './wsAuth.js';
@@ -53,6 +62,12 @@ export interface CliArgs {
   allowedHosts: string[];
   /** --rotate-token: replace the persisted server token before starting. */
   rotateToken: boolean;
+  /** Seed Tong's Grok Bot roster and animate them when no live feed is connected. */
+  demo: boolean;
+  /** Optional local JSON file of Grok Bot statuses to poll. */
+  feedPath?: string;
+  /** Bundled scene to load (`office` | `garden`). */
+  theme?: OfficeTheme;
 }
 
 /** Thrown by parseArgs on an invalid --port. Kept separate from process.exit so
@@ -66,6 +81,7 @@ export function parseArgs(argv: string[]): CliArgs {
     terminal: true,
     allowedHosts: [],
     rotateToken: false,
+    demo: false,
   };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--port' || argv[i] === '-p') {
@@ -102,6 +118,27 @@ export function parseArgs(argv: string[]): CliArgs {
       args.rotateToken = true;
     } else if (argv[i] === '--no-terminal') {
       args.terminal = false;
+    } else if (argv[i] === '--demo') {
+      args.demo = true;
+    } else if (argv[i] === '--no-demo') {
+      args.demo = false;
+    } else if (argv[i] === '--feed') {
+      const raw = argv[i + 1];
+      if (raw === undefined) {
+        throw new CliArgsError('Missing value for --feed: expected a JSON file path.');
+      }
+      args.feedPath = raw;
+      i++;
+    } else if (argv[i] === '--theme') {
+      const raw = argv[i + 1];
+      if (raw === undefined) {
+        throw new CliArgsError('Missing value for --theme: expected office or garden.');
+      }
+      if (!isOfficeTheme(raw)) {
+        throw new CliArgsError(`Invalid --theme "${raw}": expected office or garden.`);
+      }
+      args.theme = raw;
+      i++;
     } else if (argv[i] === '--help') {
       console.log(`Usage: pixel-agents [options]
 
@@ -115,6 +152,10 @@ Options:
                         old one (bookmarks, other devices) stops working
   --no-terminal         Disable the embedded terminal (watch agents only; no
                         launching or attaching from the browser)
+  --demo                Seed Tong's Grok Bot roster and simulate activity
+  --no-demo             Do not seed the demo roster
+  --feed <path>         Poll a local JSON file of Grok Bot statuses
+  --theme office|garden Load a bundled scene (overwrites ~/.pixel-agents/layout.json)
   --help                Show this help message`);
       process.exit(0);
     }
@@ -244,10 +285,23 @@ async function main(): Promise<void> {
 
   try {
     // Create runtime first (before server.start, so we can pass it in)
-    const runtime = new AgentRuntime(store, claudeProvider);
+    const runtime = new AgentRuntime(store, claudeProvider, { providers: runtimeProviders });
 
-    // Wire hook events: HTTP POST -> runtime -> hookEventHandler -> agents
+    const grokBotFeed = new GrokBotFeed({
+      store,
+      runtime,
+      demo: args.demo,
+      feedPath: args.feedPath,
+    });
+
+    // Wire hook events: HTTP POST -> runtime -> hookEventHandler -> agents.
+    // Grok Bot rows (agent_id/status) go through the feed so missing characters
+    // are created before the event is dispatched.
     server.onHookEvent((providerId, event) => {
+      if (providerId === GROK_BOT_PROVIDER_ID) {
+        grokBotFeed.handleIncoming(event);
+        return;
+      }
       runtime.handleHookEvent(providerId, event);
     });
 
@@ -351,6 +405,18 @@ async function main(): Promise<void> {
 
     reportTerminalStatus(ptyManager, args.host, args.terminal);
 
+    if (args.theme) {
+      const scene = loadThemeLayout(distRoot, args.theme);
+      if (scene) {
+        writeLayoutToFile(scene);
+        console.log(`[Pixel Agents] Scene: ${args.theme}`);
+      } else {
+        console.warn(`[Pixel Agents] Scene "${args.theme}" not found under assets/`);
+      }
+    }
+
+    grokBotFeed.start();
+
     // Sync runtime refs with persisted settings BEFORE first scan tick. The
     // runtime's single hooksEnabled ref follows the Claude provider until the
     // scanners grow per-provider awareness alongside the Settings UI.
@@ -427,6 +493,7 @@ async function main(): Promise<void> {
       // wait for them: exiting now would cancel the SIGKILL escalation and
       // leave a child that ignores SIGHUP orphaned on a dead server.
       await ptyManager.disposeAll();
+      grokBotFeed.dispose();
       runtime.dispose();
       server.stop();
       process.exit(0);

@@ -37,6 +37,10 @@ export interface PersistedAgent {
   palette?: number;
   /** Hue shift in degrees (0-360). Persisted alongside palette. */
   hueShift?: number;
+  /** Provider that created this agent (`claude`, `grok-bot`, …). */
+  providerId?: string;
+  /** True when the agent has no transcript; all state comes from hooks/feed. */
+  hooksOnly?: boolean;
 }
 
 /** Agent seat assignment with visual identity

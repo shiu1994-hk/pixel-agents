@@ -51,11 +51,14 @@ import { PathSet } from '../../server/src/pathKey.js';
 import type { ConsentEffects } from '../../server/src/providers/hook/consentExecutor.js';
 import { applyConsentChoice } from '../../server/src/providers/hook/consentExecutor.js';
 import { hooksConsentRequest } from '../../server/src/providers/hook/consentGate.js';
+import { GROK_BOT_PROVIDER_ID } from '../../server/src/providers/hook/grok-bot/constants.js';
+import { GrokBotFeed } from '../../server/src/providers/hook/grok-bot/feedRuntime.js';
 import {
   claudeProvider,
   copyHookScript,
   hookProviderById,
   hookProviders,
+  runtimeProviders,
 } from '../../server/src/providers/index.js';
 import { PixelAgentsServer } from '../../server/src/server.js';
 import {
@@ -102,6 +105,8 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
 
   // Shared agent lifecycle core (timer Maps, scanners, hook handler, dismissal tracker)
   private runtime: AgentRuntime;
+  /** Creates Grok Bot characters from a local status feed (no demo seed here). */
+  private grokBotFeed: GrokBotFeed;
 
   // Global session scanning dismissal tracking
   private globalDismissedFiles = new Set<string>();
@@ -196,7 +201,8 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     });
 
     // Create shared runtime (owns timer Maps, scanners, hook handler, dismissal tracker)
-    this.runtime = new AgentRuntime(this.store, claudeProvider);
+    this.runtime = new AgentRuntime(this.store, claudeProvider, { providers: runtimeProviders });
+    this.grokBotFeed = new GrokBotFeed({ store: this.store, runtime: this.runtime, demo: false });
 
     this.initServer();
   }
@@ -257,6 +263,10 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
   private initServer(): void {
     this.pixelAgentsServer = new PixelAgentsServer();
     this.pixelAgentsServer.onHookEvent((providerId, event) => {
+      if (providerId === GROK_BOT_PROVIDER_ID) {
+        this.grokBotFeed.handleIncoming(event);
+        return;
+      }
       this.runtime.handleHookEvent(providerId, event);
     });
 

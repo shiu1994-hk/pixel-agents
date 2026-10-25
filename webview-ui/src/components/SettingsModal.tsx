@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 
+import { OFFICE_THEMES } from '../constants.js';
 import { isSoundEnabled, setSoundEnabled } from '../notificationSound.js';
 import { isBrowserRuntime } from '../runtime.js';
 import { transport } from '../transport/index.js';
@@ -42,6 +43,8 @@ interface SettingsModalProps {
   onExportLayout: () => void;
   /** Browser-native layout import from a chosen file (standalone only). */
   onImportLayout: (file: File) => void;
+  /** Load a bundled scene (standalone). */
+  onApplyScene?: (url: string, label: string) => void;
 }
 
 export function SettingsModal({
@@ -67,6 +70,7 @@ export function SettingsModal({
   onToggleShowHostDirectories,
   onExportLayout,
   onImportLayout,
+  onApplyScene,
 }: SettingsModalProps) {
   const [soundLocal, setSoundLocal] = useState(isSoundEnabled);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -127,6 +131,19 @@ export function SettingsModal({
           }}
         />
       )}
+      {isBrowserRuntime &&
+        onApplyScene &&
+        OFFICE_THEMES.map((scene) => (
+          <MenuItem
+            key={scene.id}
+            onClick={() => {
+              void onApplyScene(scene.url, scene.label);
+              onClose();
+            }}
+          >
+            Scene: {scene.label}
+          </MenuItem>
+        ))}
       {/* Browser has no native directory picker, so accept a typed absolute path. */}
       {isBrowserRuntime ? (
         <div className="flex items-center gap-4 py-4 px-10">

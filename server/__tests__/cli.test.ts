@@ -152,6 +152,24 @@ describe('parseArgs', () => {
     expect(parseArgs([]).rotateToken).toBe(false);
     expect(parseArgs(['--rotate-token']).rotateToken).toBe(true);
   });
+
+  it('defaults demo off and accepts --demo / --no-demo', () => {
+    expect(parseArgs([]).demo).toBe(false);
+    expect(parseArgs(['--demo']).demo).toBe(true);
+    expect(parseArgs(['--demo', '--no-demo']).demo).toBe(false);
+  });
+
+  it('parses --feed and --theme', () => {
+    expect(parseArgs(['--feed', '/tmp/bots.json']).feedPath).toBe('/tmp/bots.json');
+    expect(parseArgs(['--theme', 'garden']).theme).toBe('garden');
+    expect(parseArgs(['--theme', 'office']).theme).toBe('office');
+  });
+
+  it('rejects a missing or unknown --theme / --feed', () => {
+    expect(() => parseArgs(['--theme'])).toThrow(/Missing value/);
+    expect(() => parseArgs(['--theme', 'moon'])).toThrow(CliArgsError);
+    expect(() => parseArgs(['--feed'])).toThrow(/Missing value/);
+  });
 });
 
 // The TTY consent prompt is gone: first-run consent is asked in the app, as

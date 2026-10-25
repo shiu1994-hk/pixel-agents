@@ -1,0 +1,52 @@
+{
+  "theme": "office",
+  "agents": [
+    {
+      "agent_id": "ai-bubu",
+      "name": "AI BUBU",
+      "role": "Chief of Staff",
+      "status": "reading",
+      "last_action": "Reviewing the inbox"
+    },
+    {
+      "agent_id": "stock-trader",
+      "name": "Stock Trader",
+      "role": "Markets",
+      "status": "working",
+      "last_action": "Scanning the tape"
+    },
+    {
+      "agent_id": "database-master",
+      "name": "Database Master",
+      "role": "Data",
+      "status": "idle"
+    },
+    {
+      "agent_id": "web-tools-builder",
+      "name": "Web Tools Builder",
+      "role": "Builder",
+      "status": "working",
+      "last_action": "Shipping a widget"
+    },
+    {
+      "agent_id": "designer",
+      "name": "Designer",
+      "role": "Design",
+      "status": "waiting",
+      "last_action": "Waiting on feedback"
+    },
+    {
+      "agent_id": "personal-helper",
+      "name": "Personal Helper",
+      "role": "Ops",
+      "status": "idle"
+    },
+    {
+      "agent_id": "learning-machine",
+      "name": "Learning Machine",
+      "role": "Research",
+      "status": "reading",
+      "last_action": "Reading a paper"
+    }
+  ]
+}

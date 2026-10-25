@@ -38,6 +38,7 @@ import type { HookEvent } from './hookEventHandler.js';
 import { HookEventHandler } from './hookEventHandler.js';
 import { assignPaletteIfNeeded } from './paletteAssigner.js';
 import { PathSet, pathsMatch } from './pathKey.js';
+import { GROK_BOT_PROVIDER_ID } from './providers/hook/grok-bot/constants.js';
 import { SessionRouter } from './sessionRouter.js';
 import { SubagentWatch } from './subagentWatch.js';
 import { cancelPermissionTimer, cancelWaitingTimer } from './timerManager.js';
@@ -88,6 +89,7 @@ export class AgentRuntime {
   constructor(
     private readonly store: AgentStateStore,
     provider: HookProvider,
+    options?: { providers?: readonly HookProvider[] },
   ) {
     // Wire module-level dependencies
     setDismissalTracker(this.dismissalTracker);
@@ -142,6 +144,7 @@ export class AgentRuntime {
       }
     });
 
+    const providers = options?.providers ?? [provider];
     this.hookEventHandler = new HookEventHandler(
       store,
       this.waitingTimers,
@@ -149,6 +152,7 @@ export class AgentRuntime {
       provider,
       new SessionRouter(),
       this.watchAllSessions,
+      (providerId) => providers.find((p) => p.id === providerId) ?? provider,
     );
 
     // Wire hook lifecycle callbacks to shared agent operations
@@ -487,10 +491,14 @@ export class AgentRuntime {
       // is live. Restoring them directly would resurrect immortal characters
       // (also skips stale entries written by older builds that persisted them).
       if (p.leadAgentId !== undefined && !p.teamName) continue;
-      try {
-        if (!fs.existsSync(p.jsonlFile)) continue;
-      } catch {
-        continue;
+      const hooksOnly =
+        Boolean(p.hooksOnly) || (!p.jsonlFile && p.providerId === GROK_BOT_PROVIDER_ID);
+      if (!hooksOnly) {
+        try {
+          if (!fs.existsSync(p.jsonlFile)) continue;
+        } catch {
+          continue;
+        }
       }
       if (this.store.has(p.id)) {
         this.knownJsonlFiles.add(p.jsonlFile);
@@ -515,33 +523,40 @@ export class AgentRuntime {
         teamUsesTmux: p.teamUsesTmux,
         palette: p.palette,
         hueShift: p.hueShift,
+        providerId: p.providerId,
+        hooksOnly: hooksOnly || undefined,
+        hookDelivered: hooksOnly || undefined,
       });
 
       assignPaletteIfNeeded(agent, this.store);
       this.store.set(p.id, agent);
-      this.knownJsonlFiles.add(p.jsonlFile);
+      if (p.jsonlFile) this.knownJsonlFiles.add(p.jsonlFile);
 
-      try {
-        const stat = fs.statSync(p.jsonlFile);
-        agent.fileOffset = stat.size;
-        startFileWatching(
-          p.id,
-          p.jsonlFile,
-          this.store,
-          this.fileWatchers,
-          this.pollingTimers,
-          this.waitingTimers,
-          this.permissionTimers,
-        );
-      } catch {
-        /* ignore stat errors on restore */
+      if (!hooksOnly && p.jsonlFile) {
+        try {
+          const stat = fs.statSync(p.jsonlFile);
+          agent.fileOffset = stat.size;
+          startFileWatching(
+            p.id,
+            p.jsonlFile,
+            this.store,
+            this.fileWatchers,
+            this.pollingTimers,
+            this.waitingTimers,
+            this.permissionTimers,
+          );
+        } catch {
+          /* ignore stat errors on restore */
+        }
       }
 
       this.registerAgent(agent.sessionId, agent.id);
 
       if (p.id > maxId) maxId = p.id;
       console.log(
-        `[Pixel Agents] Restored external agent ${p.id} -> ${path.basename(p.jsonlFile)}`,
+        hooksOnly
+          ? `[Pixel Agents] Restored hooks-only agent ${p.id} (${agent.agentName ?? agent.sessionId})`
+          : `[Pixel Agents] Restored external agent ${p.id} -> ${path.basename(p.jsonlFile)}`,
       );
     }
 
