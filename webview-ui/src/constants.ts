@@ -4,6 +4,11 @@ import type { ColorValue } from './components/ui/types.js';
 export const TILE_SIZE = 16;
 export const DEFAULT_COLS = 20;
 export const DEFAULT_ROWS = 11;
+/** Bundled scenes the Settings picker can load in standalone. */
+export const OFFICE_THEMES = [
+  { id: 'office', label: 'Office', url: '/assets/default-layout-1.json' },
+  { id: 'garden', label: 'Garden', url: '/assets/scenes/garden.json' },
+] as const;
 export const MAX_COLS = 64;
 export const MAX_ROWS = 64;
 

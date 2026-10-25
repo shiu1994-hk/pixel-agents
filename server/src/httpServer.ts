@@ -18,6 +18,7 @@ import {
   WS_CLOSE_FORBIDDEN_ORIGIN,
   WS_CLOSE_UNAUTHORIZED,
 } from './constants.js';
+import { isGrokBotFeedPayload } from './providers/hook/grok-bot/feed.js';
 import type { PtySessionManager } from './terminal/ptySessionManager.js';
 import { registerTerminalRoutes } from './terminal/terminalRoutes.js';
 import type { AgentState } from './types.js';
@@ -158,7 +159,7 @@ function registerHookRoute(app: FastifyInstance, options: HttpServerOptions): vo
       const { providerId } = request.params;
       const event = request.body;
 
-      if (event.session_id && event.hook_event_name) {
+      if ((event.session_id && event.hook_event_name) || isGrokBotFeedPayload(event)) {
         options.onHookEvent?.(providerId, event);
       }
 

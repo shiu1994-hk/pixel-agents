@@ -23,20 +23,24 @@
 
 <br/>
 
-Pixel Agents turns the AI coding agents running in your terminals into animated pixel-art characters working in a tiny office. They walk to their desks, sit down, type when they're editing files, read when they're searching, and flag you visually when they're stuck waiting for input.
+This repository is **Tong (hei shiu)'s fork** of [pixel-agents-hq/pixel-agents](https://github.com/pixel-agents-hq/pixel-agents) (MIT). It keeps the pixel office and adds a **Grok Bot status adapter** so Tong's named teammates — AI BUBU, Stock Trader, Database Master, and the rest — sit in the office and animate from a local JSON / HTTP feed. No live Grok Bot API is required.
+
+Pixel Agents turns AI agents into animated pixel-art characters working in a tiny office. They walk to their desks, sit down, type when they're working, read when they're searching, and flag you visually when they're stuck waiting for input.
 
 It ships in two forms from the same codebase:
 
 - **VS Code extension** — [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=pablodelucca.pixel-agents) and [Open VSX](https://open-vsx.org/extension/pablodelucca/pixel-agents). Agents launch into VS Code terminals; characters render in the panel area.
 - **Standalone CLI** — `npx pixel-agents` starts a local server and serves the same office as a browser app, useful for tmux, remote, and non-VS Code workflows.
 
-The architecture is fully agent-agnostic and editor-agnostic: a typed `HookProvider` interface defines the integration boundary so adding a new AI tool is a single subdirectory of code. Claude Code is the reference implementation today; Codex, Gemini, Cursor, and others are on the roadmap.
+The architecture is fully agent-agnostic and editor-agnostic: a typed `HookProvider` interface defines the integration boundary so adding a new AI tool is a single subdirectory of code. This fork ships two providers: **Claude Code** (upstream reference) and **Grok Bot** (local status feed).
 
 ![Pixel Agents screenshot](webview-ui/public/office.png)
 
 ## Features
 
-- **One agent, one character** — every Claude Code terminal gets its own animated character
+- **One agent, one character** — every tracked session (Claude Code terminal or Grok Bot teammate) gets its own animated character
+- **Grok Bot roster + demo mode** — seed Tong's main bots and simulate activity when no live feed is connected
+- **Themeable scenes** — default office, plus a garden scene (`--theme garden` or Settings → Scene)
 - **Live activity tracking** — characters animate based on what the agent is actually doing (writing, reading, running commands)
 - **Office layout editor** — design your office with floors, walls, and furniture using a built-in editor
 - **Speech bubbles** — visual indicators when an agent is waiting for input or awaiting permission
@@ -84,7 +88,27 @@ Pixel Agents also detects Claude sessions started outside the extension. Turn on
 
 ### Standalone CLI
 
-Run Pixel Agents from the workspace whose Claude sessions you want to see:
+From this repo (after `npm install && npm run build`):
+
+```bash
+npm start
+```
+
+That is `node dist/cli.js --demo --no-terminal`. It opens a local URL — paste it into a browser to see Tong's Grok Bot roster walking, typing, and reading. Add `--theme garden` for the park scene.
+
+```bash
+node dist/cli.js --demo
+node dist/cli.js --demo --theme garden
+node dist/cli.js --feed examples/grok-bot-feed.json
+```
+
+The published-package equivalent is:
+
+```bash
+npx pixel-agents --demo --no-terminal
+```
+
+Run Pixel Agents from a workspace whose Claude sessions you also want to see:
 
 ```bash
 cd /path/to/your/project
@@ -122,6 +146,83 @@ Copying from the embedded terminal is verbatim: Cmd+C (Mac), Ctrl+C or Ctrl+Shif
 The extension and standalone CLI can run at the same time. Each server registers under `~/.pixel-agents/servers/`; the hook script sends events to all active registrations. VS Code and standalone keep separate agents, seats, and settings while using the shared office layout.
 
 Stop a standalone server with **Ctrl+C**. It removes only its own registration.
+
+## Grok Bot status feed
+
+Characters can follow Tong's Grok Bot teammates by name instead of (or as well as) Claude Code terminals. The adapter is `server/src/providers/hook/grok-bot/` — a `HookProvider` that normalizes a local feed into the same `AgentEvent` model the office already understands.
+
+### Demo mode
+
+`--demo` seeds this roster and cycles their activity until a live row arrives for that bot:
+
+| id                  | name              | role           |
+| ------------------- | ----------------- | -------------- |
+| `ai-bubu`           | AI BUBU           | Chief of Staff |
+| `stock-trader`      | Stock Trader      | Markets        |
+| `database-master`   | Database Master   | Data           |
+| `web-tools-builder` | Web Tools Builder | Builder        |
+| `designer`          | Designer          | Design         |
+| `personal-helper`   | Personal Helper   | Ops            |
+| `learning-machine`  | Learning Machine  | Research       |
+
+Turn on **Settings → Always Show Labels** to keep names and activity visible.
+
+### Feed format
+
+A file or HTTP body is either one agent or a snapshot. See `examples/grok-bot-feed.json`.
+
+```json
+{
+  "theme": "office",
+  "agents": [
+    {
+      "agent_id": "ai-bubu",
+      "name": "AI BUBU",
+      "role": "Chief of Staff",
+      "status": "working",
+      "last_action": "Briefing Tong",
+      "theme": "office"
+    }
+  ]
+}
+```
+
+| Field            | Required | Notes                                                                             |
+| ---------------- | -------- | --------------------------------------------------------------------------------- |
+| `agent_id`       | yes      | Stable id. Also accepted as `session_id`. Prefixed internally as `grok-bot:<id>`. |
+| `status`         | yes      | `working` \| `reading` \| `waiting` \| `idle` \| `error`                          |
+| `name`           | no       | Shown above the character (defaults to the roster name).                          |
+| `role`           | no       | Smaller origin label (defaults to the roster role).                               |
+| `last_action`    | no       | Activity label (`Briefing Tong`, `Scanning the tape`, …).                         |
+| `theme` / `room` | no       | Scene hint. v1 applies `--theme` / Settings scenes, not per-row rooms.            |
+
+Statuses map to office motion: `working` types, `reading` reads, `waiting` shows the input bubble, `idle` wanders, `error` shows the amber permission dots.
+
+### How to plug the feed
+
+**File (easiest).** Write the JSON above and point the CLI at it. The file is re-read about every 750 ms.
+
+```bash
+node dist/cli.js --demo --feed examples/grok-bot-feed.json
+```
+
+A live row for `agent_id` mutes the demo ticker for that bot.
+
+**HTTP POST.** Same body, authenticated like Claude hooks. Copy `port` and `authToken` from `~/.pixel-agents/server.json` (or the `?token=` on the printed URL).
+
+```bash
+curl -sS -X POST "http://127.0.0.1:PORT/api/hooks/grok-bot" \
+  -H "Authorization: Bearer TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"agent_id":"stock-trader","status":"reading","last_action":"Scanning the tape"}'
+```
+
+A snapshot (`{"agents":[...]}`) is also accepted. There is no separate Grok Bot WebSocket: POST (or the file poll) is the push path; the office UI already uses `/ws`.
+
+### Scenes
+
+- **Office** (default) — the bundled layout. Layout editor still works.
+- **Garden** — `webview-ui/public/assets/scenes/garden.json`. Load with `--theme garden` or **Settings → Scene: Garden** (standalone). `--theme` overwrites `~/.pixel-agents/layout.json`.
 
 ## Customizing the Office
 
@@ -165,10 +266,11 @@ The extension and CLI are bundled with esbuild; the webview is built with Vite. 
 ## Development
 
 ```bash
-git clone https://github.com/pixel-agents-hq/pixel-agents.git
+git clone https://github.com/shiu1994-hk/pixel-agents.git
 cd pixel-agents
 npm install
 npm run build
+npm start
 ```
 
 Press **F5** in VS Code to launch the Extension Development Host. To run the standalone bundle built from source:
@@ -237,4 +339,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request and read ou
 
 ## License
 
-Pixel Agents is available under the [MIT License](LICENSE).
+Pixel Agents is available under the [MIT License](LICENSE). This fork keeps that license and upstream copyright (Pablo De Lucca / pixel-agents-hq). Attribution: [pixel-agents-hq/pixel-agents](https://github.com/pixel-agents-hq/pixel-agents).

@@ -13,14 +13,19 @@
 
 import type { HookProvider } from '../../../core/src/provider.js';
 import { claudeProvider } from './hook/claude/claude.js';
+import { grokBotProvider } from './hook/grok-bot/grokBot.js';
 
 export { claudeProvider };
+export { grokBotProvider };
 export { copyHookScript } from './hook/claude/claudeHookInstaller.js';
 
-/** Every bundled hook provider, in registration order. The consent gate loops
- *  over this at the webviewReady handshake (one ask per provider that needs
- *  one) and `hooksConsentResponse` resolves its provider id against it. */
+/** Every bundled hook provider the consent gate asks about. Grok Bot is
+ *  registered with the runtime (it never writes a third-party settings file)
+ *  but is not in this list, so the Intro does not grow a second ask. */
 export const hookProviders: readonly HookProvider[] = [claudeProvider];
+
+/** Providers the runtime can dispatch hook / feed events for. */
+export const runtimeProviders: readonly HookProvider[] = [claudeProvider, grokBotProvider];
 
 /** Resolve a wire-supplied provider id, or undefined for an unknown one —
  *  the caller writes nothing on undefined (fail-closed, like a junk choice). */

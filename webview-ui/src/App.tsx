@@ -396,6 +396,54 @@ function App() {
     exportLayoutToFile(getOfficeState().getLayout());
   }, []);
 
+  const applyImportedLayout = useCallback(
+    (imported: Record<string, unknown>) => {
+      if (
+        imported.version !== 1 ||
+        !Array.isArray(imported.tiles) ||
+        !Array.isArray(imported.furniture)
+      ) {
+        window.alert('Invalid layout file.');
+        return false;
+      }
+      const migrated = migrateLayoutColors(imported as unknown as OfficeLayout);
+      getOfficeState().rebuildFromLayout(migrated);
+      editor.setLastSavedLayout(migrated);
+      transport.send({
+        type: 'saveLayout',
+        layout: migrated as unknown as Record<string, unknown>,
+      });
+      editor.markClean();
+      return true;
+    },
+    [editor],
+  );
+
+  const handleApplyScene = useCallback(
+    async (url: string, label: string) => {
+      if (
+        isEditDirty() &&
+        !window.confirm(
+          `Replace the current layout with the ${label} scene? Unsaved edits will be lost.`,
+        )
+      ) {
+        return;
+      }
+      try {
+        const response = await fetch(url);
+        if (!response.ok) {
+          window.alert(`Could not load the ${label} scene.`);
+          return;
+        }
+        const imported = (await response.json()) as Record<string, unknown>;
+        applyImportedLayout(imported);
+      } catch {
+        window.alert(`Failed to load the ${label} scene.`);
+      }
+    },
+    [applyImportedLayout, isEditDirty],
+  );
+
   const handleImportLayout = useCallback(
     (file: File) => {
       // Browser-native import (standalone): read + validate + apply directly,
@@ -410,31 +458,14 @@ function App() {
       reader.onload = () => {
         try {
           const imported = JSON.parse(String(reader.result)) as Record<string, unknown>;
-          // Match the VS Code guard, plus the furniture-array check VS Code omits
-          // (migrate + rebuild iterate furniture and would throw on a non-array).
-          if (
-            imported.version !== 1 ||
-            !Array.isArray(imported.tiles) ||
-            !Array.isArray(imported.furniture)
-          ) {
-            window.alert('Invalid layout file.');
-            return;
-          }
-          const migrated = migrateLayoutColors(imported as unknown as OfficeLayout);
-          getOfficeState().rebuildFromLayout(migrated);
-          editor.setLastSavedLayout(migrated);
-          transport.send({
-            type: 'saveLayout',
-            layout: migrated as unknown as Record<string, unknown>,
-          });
-          editor.markClean();
+          applyImportedLayout(imported);
         } catch {
           window.alert('Failed to read or parse layout file.');
         }
       };
       reader.readAsText(file);
     },
-    [isEditDirty, editor],
+    [applyImportedLayout, isEditDirty],
   );
 
   // Force dependency on editorTickForKeyboard to propagate keyboard-triggered re-renders
@@ -866,6 +897,7 @@ function App() {
         }}
         onExportLayout={handleExportLayout}
         onImportLayout={handleImportLayout}
+        onApplyScene={handleApplyScene}
       />
 
       {showMigrationNotice && (
